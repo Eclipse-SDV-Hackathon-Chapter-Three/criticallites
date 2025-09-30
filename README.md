@@ -7,8 +7,8 @@
 ## Team Members  
 | Name | GitHub Handle | Role(s) |
 |-------|---------------|---------|
-|Ana Dias            |annaxpsy          |         |
-|André Novo          |dnovor            |         |
+|Ana Dias            |anitasoaares      |         |
+|André Novo          |YoruAN            |         |
 |Danilo Margarido    |bit2shift         |         |
 |João Carlos Ferreira|joaoferreira92-dev|         |
 |Jorge Nunes         |jmrnunes          |         |
