@@ -14,10 +14,10 @@
 |Jorge Nunes         |jmrnunes          |         |
 
 ## Challenge  
-We have chosen the SDV Lab Challenge.
+We have chosen the **SDV Lab Challenge**.
 
 ## Core Idea  
-Our idea is to start with a simple concept which will be further improved. JACCUS (Just Another Cruise Control Utility System) will be our solution to this. 
+Our idea is to start with a simple concept which will be further improved. JACCUS (Just Another Cruise Control Usefull System) will be our solution to this. 
 We'll start cruise control who will allow to keep speed but also lowering the energy consumption. By increasing slightly the speed on the descends and lowering a bit when going uphill, it will allow to use inertia in our favor. This may use visual cues, absolute position sensors, gps coordinates, depending on the sensors. 
 After that, we intend that it will also keep the vehicle on its lane, so that in a highway we may simply apply it and it will keep going down the road. If it reaches an exit, it will warn in advance the driver. By default, it will keep going. As we advance, we are also considering the hypothesis of doing overtakes or letting JACCUS to choose the lane more appropriate to the drivers chosen speed.
 
