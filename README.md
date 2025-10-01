@@ -1,8 +1,8 @@
-# Criticallites
+# Criticallities
 
 # 1. Your Team at a Glance
 
-## Criticallites -> JACCUS cruise control  
+## Criticallities -> JACCUS cruise control  
 
 ## Team Members  
 | Name | GitHub Handle | Role(s) |
