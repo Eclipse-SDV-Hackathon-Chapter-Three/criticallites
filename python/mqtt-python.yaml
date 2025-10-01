@@ -1,0 +1,56 @@
+apiVersion: v0.1
+workloads:
+  mqtt-publisher:
+    runtime: podman
+    agent: agent_A
+    configs:
+      python_mqtt_settings: python_mqtt_settings
+      publisher_data: publisher_data
+    files:
+      - mountPoint: /app/mqtt_config.json
+        data: "{{python_mqtt_settings}}"
+      - mountPoint: /app/data.json
+        data: "{{publisher_data}}"
+    restartPolicy: NEVER
+    runtimeConfig: |
+      image: ghcr.io/eclipse-sdv-hackathon-chapter-three/sdv-lab/mqtt-publisher:latest
+      commandOptions: [ "--net=host" ]
+  mqtt-subscriber:
+    runtime: podman
+    agent: agent_A
+    configs:
+      python_mqtt_settings: python_mqtt_settings
+    files:
+      - mountPoint: /app/mqtt_config.json
+        data: "{{python_mqtt_settings}}"
+    restartPolicy: NEVER
+    runtimeConfig: |
+      image: ghcr.io/eclipse-sdv-hackathon-chapter-three/sdv-lab/mqtt-subscriber:latest
+      commandOptions: [ "--net=host" ]
+configs:
+  python_mqtt_settings: |
+    {
+      "broker": "localhost",
+      "port": 1883,
+      "keepalive": 60,
+      "topics": {
+        "vehicle_parameters": "vehicle/parameters"
+      }
+    }
+  publisher_data: |
+    {
+      "AmbientTemperature": 22,
+      "Battery": 80,
+      "CruiseControl": false,
+      "Economy": "Normal",
+      "Engine Temperature": 90,
+      "Gear": "P",
+      "RPM": 0.0,
+      "Range": 320,
+      "ShareLocation": false,
+      "Speed": 50,
+      "SpeedUnit": "km/h",
+      "TemperatureUnit": 0,
+      "TypeOfVehicle": 0
+    }
+

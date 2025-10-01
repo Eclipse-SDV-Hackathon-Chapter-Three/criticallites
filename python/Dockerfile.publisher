@@ -1,0 +1,22 @@
+# Use a small Python base
+FROM python:3.11-slim
+
+# Work directory in the container
+WORKDIR /app
+
+# Install Python deps first (better layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy your application files (script, configs, etc.)
+COPY . .
+
+# Log immediately (no buffering)
+ENV PYTHONUNBUFFERED=1
+
+# (Optional) run as non-root
+RUN useradd -ms /bin/bash appuser && chown -R appuser /app
+USER appuser
+
+# Change 'publisher.py' to your script's filename if different
+CMD ["python3", "-u", "publisher.py"]
