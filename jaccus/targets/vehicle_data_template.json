@@ -1,0 +1,15 @@
+{
+  "AmbientTemperature": 22,
+  "Battery": 80,
+  "CruiseControl": false,
+  "Economy": "Normal",
+  "Engine Temperature": 90,
+  "Gear": "D",
+  "RPM": 0.0,
+  "Range": 320,
+  "ShareLocation": true,
+  "Speed": 0,
+  "SpeedUnit": "km/h",
+  "TemperatureUnit": 0,
+  "TypeOfVehicle": 0
+}
