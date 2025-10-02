@@ -1,0 +1,6 @@
+carla==0.9.15
+eclipse-zenoh==1.5.1
+numpy==2.2.6
+paho-mqtt==2.1.0
+pygame==2.6.1
+

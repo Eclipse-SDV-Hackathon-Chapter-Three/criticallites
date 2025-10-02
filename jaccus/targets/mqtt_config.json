@@ -1,0 +1,12 @@
+{
+  "broker": "localhost",
+  "port": 1883,
+  "keepalive": 60,
+  "qos": 1,
+  "topics": {
+    "vehicle_parameters": "vehicle/parameters",
+    "vehicle_commands": "vehicle/commands"
+  },
+  "publish_interval": 1.0,
+  "client_id": "jaccus_vehicle"
+}
