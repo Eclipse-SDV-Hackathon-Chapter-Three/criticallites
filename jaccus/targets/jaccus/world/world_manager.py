@@ -56,17 +56,15 @@ class World(object):
         self._actor_filter = args.filter
         self._actor_generation = args.generation
         self._gamma = args.gamma
+        self._random_vehicle = getattr(args, 'random_vehicle', False)
         self.restart()
         self.world.on_tick(hud.on_world_tick)
         self.recording_enabled = False
         self.recording_start = 0
 
-        # Initialize logging with thread safety
-        self.log_file = "jaccus_run.log"
-        self._log_lock = threading.Lock()
-        with open(self.log_file, 'w') as f:
-            f.write(f"JACCUS RUN LOG - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\n")
-            f.write("=" * 80 + "\\n\\n")
+        # Initialize logging with standardized format
+        from ..core.logger import JaccusLogger
+        self.logger = JaccusLogger("jaccus_run.log")
 
     def restart(self):
         """Restart the world with new player and sensors."""
@@ -77,8 +75,14 @@ class World(object):
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
 
-        # Get a random blueprint
-        blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
+        # Get a blueprint (random vehicle type if --random-vehicle flag is set)
+        if self._random_vehicle:
+            # Use a broader filter to get all vehicle types for random selection
+            blueprint = random.choice(get_actor_blueprints(self.world, 'vehicle.*', 'All'))
+            self.logger.info(f"RANDOM_VEHICLE: Selected {blueprint.id}")
+        else:
+            # Use filtered selection as before
+            blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
         blueprint.set_attribute('role_name', self.actor_role_name)
         if blueprint.has_attribute('terramechanics'):
             blueprint.set_attribute('terramechanics', 'true')
@@ -191,33 +195,21 @@ class World(object):
 
     def log_message(self, message, category="INFO"):
         """
-        Log message with timestamp to jaccus_run.log file.
-
-        Args:
-            message (str): The message to log
-            category (str): Log category (INFO, ERROR, WARNING, EMERGENCY)
-
-        Note:
-            Thread-safe logging implementation to prevent GIL state issues.
+        Legacy log method for backward compatibility.
+        Uses the new standardized logging format.
         """
-        try:
-            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-            log_entry = f"[{timestamp}] {category}: {message}\n"
-
-            # Use thread lock to prevent GIL issues during concurrent logging
-            with self._log_lock:
-                with open(self.log_file, 'a', encoding='utf-8') as f:
-                    f.write(log_entry)
-                    f.flush()
-
-        except Exception as e:
-            # Fallback to console if file logging fails
-            print(f"[{category}] {message}")
-            print(f"Logging error: {e}")
+        if category.upper() in ["ERROR", "ERR"]:
+            self.logger.error(message, "world_manager.world_manager")
+        elif category.upper() in ["WARNING", "WAR"]:
+            self.logger.warning(message, "world_manager.world_manager")
+        elif category.upper() in ["EMERGENCY", "EMR"]:
+            self.logger.emergency(message, "world_manager.world_manager")
+        else:
+            self.logger.info(message, "world_manager.world_manager")
 
     def log_emergency_brake_event(self, distance, reason):
-        """Log emergency brake activation."""
-        self.log_message(f"EMERGENCY_BRAKE_ACTIVATED: Distance={distance:.2f}m, Reason={reason}", "EMERGENCY")
+        """Log emergency brake activation using standardized format."""
+        self.logger.emergency(f"EMERGENCY_BRAKE_ACTIVATED: Distance={distance:.2f}m, Reason={reason}", "world_manager.world_manager")
 
     def destroy(self):
         """Destroy world and clean up resources."""

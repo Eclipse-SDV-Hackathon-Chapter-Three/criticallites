@@ -130,6 +130,40 @@ class KeyboardControl(object):
                     world.player.set_autopilot(self._autopilot_enabled)
                     world.hud.notification(
                         'Autopilot %s' % ('On' if self._autopilot_enabled else 'Off'))
+                elif event.key == pygame.K_q and not pygame.key.get_pressed()[pygame.K_LCTRL]:
+                    # Toggle reverse gear (Q key functionality)
+                    if not self._ackermann_enabled:
+                        # Toggle gear between forward (1) and reverse (-1)
+                        old_gear = self._control.gear
+                        self._control.gear = -1 if self._control.gear >= 0 else 1
+                        world.hud.notification('Reverse %s (Gear: %d→%d)' %
+                                             ('On' if self._control.gear < 0 else 'Off', old_gear, self._control.gear))
+                        # Log the gear change for debugging
+                        if hasattr(world, 'logger'):
+                            world.logger.info(f'GEAR_CHANGE: Q pressed - {old_gear} → {self._control.gear}')
+                    else:
+                        self._ackermann_reverse *= -1
+                        # Reset ackermann control
+                        self._ackermann_control = carla.VehicleAckermannControl()
+                        world.hud.notification('Ackermann Reverse %s' % ('On' if self._ackermann_reverse < 0 else 'Off'))
+
+                elif event.key == pygame.K_m:
+                    # Toggle manual gear shifting
+                    self._control.manual_gear_shift = not self._control.manual_gear_shift
+                    self._control.gear = world.player.get_control().gear
+                    world.hud.notification('%s Transmission' %
+                                         ('Manual' if self._control.manual_gear_shift else 'Automatic'))
+
+                elif self._control.manual_gear_shift and event.key == pygame.K_COMMA:
+                    # Gear down (comma key)
+                    self._control.gear = max(-1, self._control.gear - 1)
+                    world.hud.notification('Gear: %s' % {-1: 'R', 0: 'N'}.get(self._control.gear, self._control.gear))
+
+                elif self._control.manual_gear_shift and event.key == pygame.K_PERIOD:
+                    # Gear up (period key)
+                    self._control.gear = self._control.gear + 1
+                    world.hud.notification('Gear: %s' % {-1: 'R', 0: 'N'}.get(self._control.gear, self._control.gear))
+
                 elif event.key == pygame.K_o:
                     try:
                         if world.map.name.endswith('01'):
@@ -242,7 +276,11 @@ class KeyboardControl(object):
         """Parse vehicle control keys."""
         # Allow manual throttle override, especially during emergency brake
         if keys[pygame.K_UP] or keys[pygame.K_w]:
+            old_throttle = self._control.throttle
             self._control.throttle = min(self._control.throttle + 0.01, 1.00)
+            # Log throttle application in reverse gear for debugging
+            if hasattr(self, 'world') and hasattr(self.world, 'logger') and self._control.gear < 0:
+                self.world.logger.info(f'REVERSE_THROTTLE: gear={self._control.gear}, throttle={old_throttle:.3f}→{self._control.throttle:.3f}')
             # Override emergency brake if user wants to accelerate
             if self.acc and self.acc.enabled and hasattr(self.acc, 'emergency_brake_active'):
                 if self.acc.emergency_brake_active:
@@ -276,8 +314,10 @@ class KeyboardControl(object):
             # Only reset brake if ACC is not controlling it
             if not (self.acc and self.acc.enabled):
                 self._control.brake = 0
-            # Reset gear to forward
-            self._control.gear = 1
+            # Only reset gear to forward if we're not manually in reverse
+            # This prevents automatic override of reverse gear setting
+            if self._control.gear == 0:  # Only reset from neutral
+                self._control.gear = 1
 
         # Manual steering - overrides lane keeping assistance
         manual_steer = False

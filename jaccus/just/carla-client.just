@@ -83,7 +83,9 @@ run-manual-sensors router="127.0.0.1" host="127.0.0.1" port="2000": (_check_host
 
 [group('Carla Client')]
 [doc('Run manual control with Sensors/JACCUS')]
-run-jaccus router="127.0.0.1" host="127.0.0.1" port="2000": (_check_host client_host)
+run-jaccus router="127.0.0.1" host="127.0.0.1" port="2000" random="false": (_check_host client_host)
+  # Check dependencies before running
+  @{{ source_directory() }}/../scripts/check_dependencies.sh
   # Copy the modular JACCUS package and runner script
   @cp -vf {{ bridge_targets }}/{{ zenoh_vehicle }} {{ python_examples }}
   @cp -rvf {{ bridge_targets }}/jaccus {{ python_examples }}
@@ -98,19 +100,23 @@ run-jaccus router="127.0.0.1" host="127.0.0.1" port="2000": (_check_host client_
     --router {{ router }}
 
 [group('Carla Client')]
-[doc('Run legacy JACCUS (monolithic version)')]
-run-jaccus-legacy router="127.0.0.1" host="127.0.0.1" port="2000": (_check_host client_host)
-  # Copy scripts (legacy monolithic version)
+[doc('Run JACCUS with random vehicle selection')]
+run-jaccus-random router="127.0.0.1" host="127.0.0.1" port="2000": (_check_host client_host)
+  # Check dependencies before running
+  @{{ source_directory() }}/../scripts/check_dependencies.sh
+  # Copy the modular JACCUS package and runner script
   @cp -vf {{ bridge_targets }}/{{ zenoh_vehicle }} {{ python_examples }}
-  @cp -rvf {{ bridge_targets }}/{{ jaccus }} {{ python_examples }}
-  # Run client
-  python3 {{ python_examples }}/{{ jaccus }} \
+  @cp -rvf {{ bridge_targets }}/jaccus {{ python_examples }}
+  @cp -vf {{ bridge_targets }}/run_jaccus.py {{ python_examples }}
+  # Run modular client with random vehicle selection
+  python3 {{ python_examples }}/run_jaccus.py \
     --host {{ host }} \
     --port {{ port }} \
     --res {{ client_width }}x{{ client_height }} \
     --filter "{{ vehicle_bp }}" \
     --rolename '{{ vehicle_role }}' \
-    --router {{ router }}
+    --router {{ router }} \
+    --random-vehicle
 
 [group('Carla Client')]
 [doc('Uninstall CARLA Python API')]

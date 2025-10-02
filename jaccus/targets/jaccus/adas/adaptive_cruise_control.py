@@ -12,28 +12,48 @@ import os
 import glob
 
 # ==============================================================================
-# -- Find CARLA module ---------------------------------------------------------
+# -- Find CARLA module - Multiple path attempts for robustness ---------------
 # ==============================================================================
 try:
-    # Use Python 3.7 CARLA egg even on Python 3.10 for compatibility
-    sys.path.append('../../../carla-simulator/PythonAPI/carla/dist/carla-0.9.15-py3.7-linux-x86_64.egg')
-    # Add CARLA agents path
-    sys.path.append('../../../carla-simulator/PythonAPI/carla')
-except:
+    # Try the standard automatic_control_zenoh.py path first
+    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
+        sys.version_info.major,
+        sys.version_info.minor,
+        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+except IndexError:
     pass
 
-# Try to import CARLA and its agents (EXACT copy from automatic_control_zenoh.py)
+# Try multiple possible CARLA installation paths
+possible_carla_paths = [
+    '/home/seame/carla-api/PythonAPI/carla',
+    '/home/seame/carla-simulator/PythonAPI/carla',
+    '/home/seame/PythonAPI/carla',
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/carla'
+]
+
+for path in possible_carla_paths:
+    if os.path.exists(path):
+        sys.path.append(path)
+        break
+
+# Try to import CARLA and its agents with proper error handling
 try:
     import carla
-
-    from agents.navigation.behavior_agent import BehaviorAgent
-    from agents.navigation.basic_agent import BasicAgent
-    from agents.navigation.constant_velocity_agent import ConstantVelocityAgent
+    from agents.navigation.behavior_agent import BehaviorAgent  # pylint: disable=import-error
+    from agents.navigation.basic_agent import BasicAgent  # pylint: disable=import-error
+    from agents.navigation.constant_velocity_agent import ConstantVelocityAgent  # pylint: disable=import-error
     CARLA_AGENTS_AVAILABLE = True
-
-except ImportError:
-    print("ERROR: CARLA not found. Please install CARLA Python API.")
+    print("CARLA agents successfully imported for ACC system")
+except ImportError as e:
+    print(f"CARLA agents import failed: {e}")
+    print("ACC will fall back to PID-only control")
     CARLA_AGENTS_AVAILABLE = False
+    # Import carla without agents for basic functionality
+    try:
+        import carla
+    except ImportError:
+        print("ERROR: CARLA not found. Please install CARLA Python API.")
+        sys.exit(1)
 
 from ..core.config import Config
 
@@ -55,8 +75,8 @@ class AdaptiveCruiseControl:
 
         # BehaviorAgent setup (same as automatic_control_zenoh.py)
         self.agent = None
-        self.agent_type = "Behavior"  # Default to BehaviorAgent
-        self.behavior = "normal"      # Default behavior
+        self.agent_type = "Behavior"  # Default to BehaviorAgent like automatic_control_zenoh.py
+        self.behavior = "normal"      # Default behavior - matches automatic_control_zenoh.py
 
         # ACC-specific overrides
         self.manual_override_active = False
@@ -85,18 +105,21 @@ class AdaptiveCruiseControl:
             if CARLA_AGENTS_AVAILABLE:
                 # Initialize BehaviorAgent when ACC is enabled
                 self._initialize_agent()
-                # Set a destination for the agent
-                self._set_random_destination()
+                # Set a destination for the agent immediately
+                if self.agent:
+                    self._set_random_destination()
+                    if hasattr(self.world, 'log_message'):
+                        self.world.log_message(f"ACC_ENABLED: BehaviorAgent initialized and destination set", "ACC")
             else:
                 # Reset PID controller for fallback mode
                 self.pid_integral = 0.0
                 self.pid_previous_error = 0.0
 
-            # Set initial target speed
+            # Set initial target speed based on current speed or minimum
             current_speed = self._get_current_speed_kmh()
             self.target_speed = max(Config.ACC_MIN_SPEED, current_speed)
 
-            mode = "BehaviorAgent" if CARLA_AGENTS_AVAILABLE else "Fallback PID"
+            mode = "BehaviorAgent" if (CARLA_AGENTS_AVAILABLE and self.agent) else "Fallback PID"
             self.world.hud.notification(
                 f'ACC ON ({mode}) - Target: {self.target_speed:.1f} km/h')
         else:
@@ -108,11 +131,18 @@ class AdaptiveCruiseControl:
             self.world.hud.notification('Adaptive Cruise Control OFF')
 
     def _initialize_agent(self):
-        """Initialize the BehaviorAgent (same logic as automatic_control_zenoh.py)."""
+        """
+        Initialize the BehaviorAgent with EXACT logic from automatic_control_zenoh.py.
+
+        Note:
+            This is a direct extraction from the working automatic_control_zenoh.py
+            to ensure identical behavior for lane keeping and navigation.
+        """
         if not CARLA_AGENTS_AVAILABLE:
             return
 
         try:
+            # EXACT initialization logic from automatic_control_zenoh.py
             if self.agent_type == "Basic":
                 self.agent = BasicAgent(self.vehicle, 30)
                 self.agent.follow_speed_limits(True)
@@ -123,47 +153,116 @@ class AdaptiveCruiseControl:
                     self.vehicle.set_location(ground_loc.location + carla.Location(z=0.01))
                 self.agent.follow_speed_limits(True)
             elif self.agent_type == "Behavior":
+                # Default BehaviorAgent - this is the key to proper lane keeping
                 self.agent = BehaviorAgent(self.vehicle, behavior=self.behavior)
 
-            # Set target speed for the agent
-            if hasattr(self.agent, 'set_target_speed'):
-                self.agent.set_target_speed(self.target_speed / 3.6)  # Convert km/h to m/s
+            # IMPORTANT: Set custom target speed instead of using defaults
+            # BehaviorAgent uses m/s internally, we use km/h
+            target_speed_ms = self.target_speed / 3.6
+
+            # Try multiple methods to set speed (different agent versions)
+            try:
+                if hasattr(self.agent, 'set_target_speed'):
+                    self.agent.set_target_speed(target_speed_ms)
+                elif hasattr(self.agent, '_target_speed'):
+                    self.agent._target_speed = target_speed_ms
+                elif hasattr(self.agent, 'target_speed'):
+                    self.agent.target_speed = target_speed_ms
+
+                if hasattr(self.world, 'log_message'):
+                    self.world.log_message(f"AGENT_INIT: {self.agent_type} agent initialized with target speed {self.target_speed:.1f} km/h", "ACC")
+
+            except Exception as speed_error:
+                print(f"Could not set agent target speed: {speed_error}")
 
         except Exception as e:
             print(f"Failed to initialize agent: {e}")
+            if hasattr(self.world, 'log_message'):
+                self.world.log_message(f"AGENT_ERROR: Failed to initialize {self.agent_type} agent: {str(e)}", "ERROR")
             self.agent = None
 
     def _set_random_destination(self):
-        """Set random destination for the agent (same as automatic_control_zenoh.py)."""
+        """
+        Set random destination for the agent - EXACT logic from automatic_control_zenoh.py.
+
+        Note:
+            This function is critical for the agent to have navigation targets,
+            which enables proper lane following and turning behavior.
+        """
         if not CARLA_AGENTS_AVAILABLE or not self.agent:
             return
 
-        if hasattr(self.world, 'map'):
-            try:
-                spawn_points = self.world.map.get_spawn_points()
-                if spawn_points:
-                    destination = random.choice(spawn_points).location
-                    self.agent.set_destination(destination)
-            except Exception as e:
-                print(f"Failed to set destination: {e}")
+        try:
+            # EXACT destination setting from automatic_control_zenoh.py
+            spawn_points = self.world.map.get_spawn_points()
+            if spawn_points:
+                destination = random.choice(spawn_points).location
+                self.agent.set_destination(destination)
+
+                if hasattr(self.world, 'log_message'):
+                    self.world.log_message(f"AGENT_DESTINATION: New destination set to ({destination.x:.1f}, {destination.y:.1f})", "ACC")
+
+                print(f"ACC: Destination set to ({destination.x:.1f}, {destination.y:.1f})")
+            else:
+                print("ACC: No spawn points available for destination setting")
+
+        except Exception as e:
+            print(f"Failed to set destination: {e}")
+            if hasattr(self.world, 'log_message'):
+                self.world.log_message(f"DESTINATION_ERROR: {str(e)}", "ERROR")
 
     def increase_target_speed(self):
-        """Increase target speed by increment."""
+        """
+        Increase target speed by increment and update agent.
+
+        Note:
+            Must update the agent's internal speed target for proper behavior.
+        """
         if self.enabled:
             new_speed = self.target_speed + Config.ACC_SPEED_INCREMENT
             self.target_speed = self._clamp(new_speed, Config.ACC_MIN_SPEED, Config.ACC_MAX_SPEED)
-            # Update agent's target speed
-            if CARLA_AGENTS_AVAILABLE and self.agent and hasattr(self.agent, 'set_target_speed'):
-                self.agent.set_target_speed(self.target_speed / 3.6)
+
+            # Update agent's target speed with multiple fallback methods
+            self._update_agent_target_speed()
+
+            if hasattr(self.world, 'log_message'):
+                self.world.log_message(f"SPEED_INCREASE: New target speed {self.target_speed:.1f} km/h", "ACC")
 
     def decrease_target_speed(self):
-        """Decrease target speed by increment."""
+        """
+        Decrease target speed by increment and update agent.
+
+        Note:
+            Must update the agent's internal speed target for proper behavior.
+        """
         if self.enabled:
             new_speed = self.target_speed - Config.ACC_SPEED_INCREMENT
             self.target_speed = self._clamp(new_speed, Config.ACC_MIN_SPEED, Config.ACC_MAX_SPEED)
-            # Update agent's target speed
-            if CARLA_AGENTS_AVAILABLE and self.agent and hasattr(self.agent, 'set_target_speed'):
-                self.agent.set_target_speed(self.target_speed / 3.6)
+
+            # Update agent's target speed with multiple fallback methods
+            self._update_agent_target_speed()
+
+            if hasattr(self.world, 'log_message'):
+                self.world.log_message(f"SPEED_DECREASE: New target speed {self.target_speed:.1f} km/h", "ACC")
+
+    def _update_agent_target_speed(self):
+        """Update agent's target speed using multiple methods for compatibility."""
+        if not (CARLA_AGENTS_AVAILABLE and self.agent):
+            return
+
+        target_speed_ms = self.target_speed / 3.6  # Convert to m/s
+
+        try:
+            # Try multiple methods to set speed (different CARLA agent versions)
+            if hasattr(self.agent, 'set_target_speed'):
+                self.agent.set_target_speed(target_speed_ms)
+            elif hasattr(self.agent, '_target_speed'):
+                self.agent._target_speed = target_speed_ms
+            elif hasattr(self.agent, 'target_speed'):
+                self.agent.target_speed = target_speed_ms
+
+        except Exception as e:
+            print(f"Could not update agent target speed: {e}")
 
     def get_status_info(self):
         """Get ACC status information for display."""
@@ -249,38 +348,60 @@ class AdaptiveCruiseControl:
             return self._update_control_fallback(base_control, world)
 
     def _update_control_with_agent(self, base_control, world):
-        """Update control using BehaviorAgent."""
-        # Check if agent needs new destination (same as automatic_control_zenoh.py)
+        """
+        Update control using BehaviorAgent - EXACT logic from automatic_control_zenoh.py.
+
+        This is the CORE logic that makes the difference between the simple manual
+        control and the sophisticated automatic_control_zenoh.py behavior.
+
+        Returns:
+            carla.VehicleControl: Agent-controlled vehicle control with lane keeping
+        """
+        # Check if agent needs new destination - EXACT logic from automatic_control_zenoh.py
         if self.agent.done():
             self._set_random_destination()
-            world.hud.notification("ACC: New destination set")
+            world.hud.notification("Target reached", seconds=4.0)
+            print("The target has been reached, searching for another target")
 
-        # Get control from BehaviorAgent (main logic from automatic_control_zenoh.py)
+        # Get control from BehaviorAgent - EXACT execution from automatic_control_zenoh.py
         try:
+            # This is the KEY line - get the agent's computed control
             agent_control = self.agent.run_step()
 
-            # Apply agent control if no manual override
-            if not self.manual_override_active:
-                # Use agent's control directly
-                base_control.throttle = agent_control.throttle
-                base_control.steer = agent_control.steer
-                base_control.brake = agent_control.brake
-                base_control.hand_brake = agent_control.hand_brake
-                base_control.reverse = agent_control.reverse
-                base_control.manual_gear_shift = agent_control.manual_gear_shift
-                base_control.gear = agent_control.gear
+            # CRITICAL: This line is missing in manual control but present in automatic_control_zenoh.py
+            # It prevents gear shifting issues and ensures smooth operation
+            agent_control.manual_gear_shift = False
 
-                # Store brake factor for display
-                self.brake_factor = agent_control.brake
+            # Apply the agent's control completely (don't merge with base_control)
+            # This is EXACTLY what automatic_control_zenoh.py does
+            control = carla.VehicleControl()
+            control.throttle = agent_control.throttle
+            control.steer = agent_control.steer  # This provides lane keeping!
+            control.brake = agent_control.brake
+            control.hand_brake = agent_control.hand_brake
+            control.reverse = agent_control.reverse
+            control.manual_gear_shift = agent_control.manual_gear_shift  # False
+            control.gear = agent_control.gear
+
+            # Store brake factor for telemetry display
+            self.brake_factor = agent_control.brake
+
+            # Optional: Log agent control for debugging
+            if hasattr(world, 'log_message'):
+                world.log_message(f"AGENT_CONTROL: throttle={control.throttle:.3f}, steer={control.steer:.3f}, brake={control.brake:.3f}", "ACC")
+
+            return control  # Return agent control, not modified base_control
 
         except Exception as e:
             print(f"Agent control error: {e}")
+            if hasattr(world, 'log_message'):
+                world.log_message(f"AGENT_ERROR: run_step failed: {str(e)}", "ERROR")
+
             # Fallback to safe stop
             base_control.throttle = 0.0
             base_control.brake = 0.3
             self.brake_factor = 0.3
-
-        return base_control
+            return base_control
 
     def _update_control_fallback(self, base_control, world):
         """Enhanced fallback PID controller with dynamic scaling and logging."""

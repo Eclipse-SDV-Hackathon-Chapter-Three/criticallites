@@ -378,6 +378,10 @@ def main():
         '--mqtt-config',
         metavar='CONFIG',
         help='MQTT configuration file path (default: mqtt_config.json in current directory)')
+    argparser.add_argument(
+        '--random-vehicle',
+        action='store_true',
+        help='select a random vehicle blueprint instead of using filter (default: False)')
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]

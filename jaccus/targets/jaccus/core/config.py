@@ -57,7 +57,7 @@ class Config:
     ACC_DEFAULT_TARGET_SPEED = 60.0   # km/h
     ACC_MIN_SPEED = 20.0              # km/h
     ACC_MAX_SPEED = 120.0             # km/h
-    ACC_SPEED_INCREMENT = 5.0         # km/h
+    ACC_SPEED_INCREMENT = 2.0         # km/h
     ACC_MIN_DISTANCE = 10.0           # meters
     ACC_SAFE_DISTANCE = 20.0          # meters
     ACC_SAFE_DISTANCE_FACTOR = 2.0
